@@ -3,13 +3,11 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use nix::{
-    sys::{
-        ptrace,
-        wait::{WaitStatus, waitpid},
-    },
-    unistd::Pid,
-};
+use nix::sys::ptrace;
+use nix::sys::signal::Signal;
+use nix::sys::wait::{WaitStatus, waitpid};
+use nix::unistd::{ForkResult, Pid, fork};
+use ratatui::{prelude::*, widgets::*};
 use ratatui::{prelude::*, widgets::*};
 use std::{error::Error, io, sync::mpsc, thread, time::Duration};
 
@@ -31,7 +29,7 @@ struct AppState {
 
 fn main() -> Result<(), Box<dyn Error>> {
     //1. Setup Channel for communication between tracer thread and UI thread
-    let (rx, tx) = mpsc::channel();
+    let (tx, rx) = mpsc::channel();
 
     //2. Fork and start the tracer
     match unsafe { fork() }? {
@@ -58,9 +56,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         history: Vec::new(),
     };
 
-    // Main UI Loop
-    loop {}
+    // 4. Main UI Loop
+    loop {
+        // Check for tracer updates
+        if let Ok(update) = rx.try_recv() {
+            app_state = update;
+        }
 
+        terminal.draw(|f| ui(f, &app_state))?;
+
+        if event::poll(Duration::from_millis(50))? {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Char('q') {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Cleanup
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     Ok(())
 }
 
