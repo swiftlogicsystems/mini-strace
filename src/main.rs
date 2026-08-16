@@ -108,3 +108,15 @@ fn run_tracer(child: Pid, tx: mpsc::Sender<AppState>) {
         }
     }
 }
+
+fn run_target_process() {
+    ptrace::traceme().unwrap();
+    // Stop the process so we can attach to it
+    nix::sys::signal::raise(nix::sys::signal::Signal::SIGSTOP).unwrap();
+    loop {
+        unsafe {
+            libc::getpid(); // Trigger a syscall to get the process ID
+            thread::sleep(Duration::from_millis(1000));
+        }
+    }
+}
